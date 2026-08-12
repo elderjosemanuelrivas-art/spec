@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Arkanoid</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="game-container">
+    <div id="hud">
+      <span id="hud-score">Score: 0</span>
+      <span id="hud-lives">Vidas: 3</span>
+    </div>
+    <canvas id="game" width="480" height="640"></canvas>
+    <div id="overlay" class="overlay hidden">
+      <div class="overlay-content">
+        <h1 id="overlay-title"></h1>
+        <button id="overlay-button">Reiniciar</button>
+      </div>
+    </div>
+  </div>
+  <script src="script.js"></script>
+</body>
+</html>

@@ -35,6 +35,7 @@ function createBricks() {
         height: BRICK_HEIGHT,
         color: BRICK_ROW_COLORS[row],
         alive: true,
+        row,
       });
     }
   }

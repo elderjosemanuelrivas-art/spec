@@ -229,6 +229,26 @@ function checkBrickCollision() {
   bounceOffBrick(ball, hit);
 }
 
+function spawnBrickParticles(brick) {
+  const centerX = brick.x + brick.width / 2;
+  const centerY = brick.y + brick.height / 2;
+
+  for (let i = 0; i < PARTICLES_PER_BRICK; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = PARTICLE_SPEED_MIN + Math.random() * (PARTICLE_SPEED_MAX - PARTICLE_SPEED_MIN);
+    state.particles.push({
+      x: centerX,
+      y: centerY,
+      dx: Math.cos(angle) * speed,
+      dy: Math.sin(angle) * speed,
+      size: PARTICLE_SIZE,
+      color: brick.color,
+      life: PARTICLE_LIFE,
+      maxLife: PARTICLE_LIFE,
+    });
+  }
+}
+
 function bounceOffBrick(ball, brick) {
   const r = ball.radius;
   const wasInsideX = ball.prevX + r > brick.x && ball.prevX - r < brick.x + brick.width;
@@ -300,6 +320,20 @@ function loseLife() {
     state.status = 'gameover';
   }
   attachBall();
+}
+
+function updateParticles() {
+  const particles = state.particles;
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const particle = particles[i];
+    particle.x += particle.dx;
+    particle.y += particle.dy;
+    particle.dy += PARTICLE_GRAVITY;
+    particle.life -= 1;
+    if (particle.life <= 0) {
+      particles.splice(i, 1);
+    }
+  }
 }
 
 function drawBall() {

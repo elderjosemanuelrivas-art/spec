@@ -5,6 +5,7 @@ const overlayTitle = document.getElementById('overlay-title');
 const overlayButton = document.getElementById('overlay-button');
 const hudScore = document.getElementById('hud-score');
 const hudLives = document.getElementById('hud-lives');
+const hudLevel = document.getElementById('hud-level');
 
 const BRICK_ROWS = 5;
 const BRICK_COLS = 8;
@@ -15,6 +16,33 @@ const BRICK_OFFSET_TOP = 40;
 const BRICK_OFFSET_LEFT =
   (480 - (BRICK_COLS * BRICK_WIDTH + (BRICK_COLS - 1) * BRICK_PADDING)) / 2;
 const BRICK_ROW_COLORS = ['#e74c3c', '#e67e22', '#f1c40f', '#2ecc71', '#3498db'];
+
+const LEVEL_LAYOUTS = [
+  [
+    '########',
+    '########',
+    '########',
+    '########',
+    '########',
+  ],
+  [
+    '...##...',
+    '..####..',
+    '.######.',
+    '########',
+    '########',
+  ],
+  [
+    '#.#.#.#.',
+    '.#.#.#.#',
+    '#.#.#.#.',
+    '.#.#.#.#',
+    '#.#.#.#.',
+  ],
+];
+const TOTAL_LEVELS = LEVEL_LAYOUTS.length;
+
+const INITIAL_LIVES = 3;
 
 const SPEED_INCREASE_INTERVAL = 10000;
 const SPEED_INCREASE_AMOUNT = 0.5;
@@ -36,9 +64,14 @@ const POPUP_LIFE = 35;
 const POPUP_RISE_SPEED = 0.8;
 const POPUP_FONT = 'bold 14px sans-serif';
 
-const BRICK_ROW_FREQUENCIES = [880, 784, 698, 622, 523];
-const BRICK_SOUND_DURATION = 0.08;
-const BRICK_SOUND_GAIN = 0.15;
+const WALL_SOUND_FREQUENCY = 880;
+const PADDLE_SOUND_FREQUENCY = 523;
+const TONE_SOUND_DURATION = 0.08;
+const TONE_SOUND_GAIN = 0.15;
+
+const BREAK_SOUND_DURATION = 0.12;
+const BREAK_SOUND_GAIN = 0.3;
+const BREAK_FILTER_FREQUENCY = 1200;
 
 let audioContext = null;
 let audioMuted = false;
@@ -52,29 +85,60 @@ function ensureAudioContext() {
   }
 }
 
-function playBrickSound(row) {
+function playToneSound(frequency) {
   if (audioMuted || !audioContext) return;
 
   const oscillator = audioContext.createOscillator();
   const gain = audioContext.createGain();
 
   oscillator.type = 'square';
-  oscillator.frequency.value = BRICK_ROW_FREQUENCIES[row];
+  oscillator.frequency.value = frequency;
 
-  gain.gain.setValueAtTime(BRICK_SOUND_GAIN, audioContext.currentTime);
-  gain.gain.exponentialRampToValueAtTime(0.0001, audioContext.currentTime + BRICK_SOUND_DURATION);
+  gain.gain.setValueAtTime(TONE_SOUND_GAIN, audioContext.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.0001, audioContext.currentTime + TONE_SOUND_DURATION);
 
   oscillator.connect(gain);
   gain.connect(audioContext.destination);
 
   oscillator.start();
-  oscillator.stop(audioContext.currentTime + BRICK_SOUND_DURATION);
+  oscillator.stop(audioContext.currentTime + TONE_SOUND_DURATION);
 }
 
-function createBricks() {
+function playBrickBreakSound() {
+  if (audioMuted || !audioContext) return;
+
+  const sampleCount = Math.floor(audioContext.sampleRate * BREAK_SOUND_DURATION);
+  const buffer = audioContext.createBuffer(1, sampleCount, audioContext.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < sampleCount; i++) {
+    data[i] = Math.random() * 2 - 1;
+  }
+
+  const source = audioContext.createBufferSource();
+  source.buffer = buffer;
+
+  const filter = audioContext.createBiquadFilter();
+  filter.type = 'lowpass';
+  filter.frequency.value = BREAK_FILTER_FREQUENCY;
+
+  const gain = audioContext.createGain();
+  gain.gain.setValueAtTime(BREAK_SOUND_GAIN, audioContext.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.0001, audioContext.currentTime + BREAK_SOUND_DURATION);
+
+  source.connect(filter);
+  filter.connect(gain);
+  gain.connect(audioContext.destination);
+
+  source.start();
+  source.stop(audioContext.currentTime + BREAK_SOUND_DURATION);
+}
+
+function createBricks(level) {
   const bricks = [];
+  const layout = LEVEL_LAYOUTS[level];
   for (let row = 0; row < BRICK_ROWS; row++) {
     for (let col = 0; col < BRICK_COLS; col++) {
+      if (layout[row][col] !== '#') continue;
       bricks.push({
         x: BRICK_OFFSET_LEFT + col * (BRICK_WIDTH + BRICK_PADDING),
         y: BRICK_OFFSET_TOP + row * (BRICK_HEIGHT + BRICK_PADDING),
@@ -90,9 +154,10 @@ function createBricks() {
 }
 
 const state = {
-  lives: 3,
+  lives: INITIAL_LIVES,
   score: 0,
   status: 'ready',
+  level: 0,
   paddle: { x: 200, y: 600, width: 80, height: 12, speed: 6 },
   ball: {
     x: 240, y: 588, radius: 6,
@@ -101,7 +166,7 @@ const state = {
     speed: 4,
     attached: true,
   },
-  bricks: createBricks(),
+  bricks: createBricks(0),
   particles: [],
   popups: [],
 };
@@ -184,23 +249,31 @@ function updateBall() {
     return;
   }
 
-  checkWin();
+  checkLevelComplete();
 }
 
 function collideWalls() {
   const ball = state.ball;
+  let bounced = false;
 
   if (ball.x - ball.radius <= 0) {
     ball.x = ball.radius;
     ball.dx = Math.abs(ball.dx);
+    bounced = true;
   } else if (ball.x + ball.radius >= canvas.width) {
     ball.x = canvas.width - ball.radius;
     ball.dx = -Math.abs(ball.dx);
+    bounced = true;
   }
 
   if (ball.y - ball.radius <= 0) {
     ball.y = ball.radius;
     ball.dy = Math.abs(ball.dy);
+    bounced = true;
+  }
+
+  if (bounced) {
+    playToneSound(WALL_SOUND_FREQUENCY);
   }
 }
 
@@ -233,13 +306,25 @@ function collidePaddle() {
   }
 
   setBallDirection(ball, angle);
+  playToneSound(PADDLE_SOUND_FREQUENCY);
 }
 
-function checkWin() {
+function checkLevelComplete() {
   const allDestroyed = state.bricks.every((brick) => !brick.alive);
-  if (allDestroyed) {
+  if (!allDestroyed) return;
+
+  if (state.level >= TOTAL_LEVELS - 1) {
     state.status = 'win';
+  } else {
+    advanceLevel();
   }
+}
+
+function advanceLevel() {
+  state.level += 1;
+  state.lives = INITIAL_LIVES;
+  state.bricks = createBricks(state.level);
+  attachBall();
 }
 
 function checkBrickCollision() {
@@ -269,7 +354,7 @@ function checkBrickCollision() {
   state.score += 10;
   spawnBrickParticles(hit);
   spawnScorePopup(hit);
-  playBrickSound(hit.row);
+  playBrickBreakSound();
   bounceOffBrick(ball, hit);
 }
 
@@ -446,6 +531,7 @@ function drawPopups() {
 function updateHud() {
   hudScore.textContent = `Score: ${state.score}`;
   hudLives.textContent = `Vidas: ${state.lives}`;
+  hudLevel.textContent = `Nivel: ${state.level + 1}/${TOTAL_LEVELS}`;
 }
 
 function showOverlay(title) {
@@ -468,11 +554,12 @@ function syncOverlay() {
 }
 
 function restartGame() {
-  state.lives = 3;
+  state.lives = INITIAL_LIVES;
   state.score = 0;
   state.status = 'ready';
+  state.level = 0;
   state.paddle.x = 200;
-  state.bricks = createBricks();
+  state.bricks = createBricks(0);
   state.particles = [];
   state.popups = [];
 

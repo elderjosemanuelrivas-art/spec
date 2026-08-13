@@ -3,6 +3,7 @@ const ctx = canvas.getContext('2d');
 const overlay = document.getElementById('overlay');
 const overlayTitle = document.getElementById('overlay-title');
 const overlayButton = document.getElementById('overlay-button');
+const pauseOverlay = document.getElementById('pause-overlay');
 const hudScore = document.getElementById('hud-score');
 const hudLives = document.getElementById('hud-lives');
 const hudLevel = document.getElementById('hud-level');
@@ -181,6 +182,7 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'ArrowRight') keys.right = true;
   if (e.key === ' ') launchBall();
   if (e.key === 'm' || e.key === 'M') audioMuted = !audioMuted;
+  if (e.key === 'p' || e.key === 'P') togglePause();
 });
 
 document.addEventListener('keyup', (e) => {
@@ -199,13 +201,24 @@ function setBallDirection(ball, angle) {
 }
 
 function launchBall() {
-  if (state.status === 'win' || state.status === 'gameover') return;
+  if (state.status === 'win' || state.status === 'gameover' || state.status === 'paused') return;
   const ball = state.ball;
   if (!ball.attached) return;
   ensureAudioContext();
   ball.attached = false;
   const towardsCenter = ball.x <= canvas.width / 2 ? 1 : -1;
   setBallDirection(ball, towardsCenter * LAUNCH_ANGLE);
+}
+
+function togglePause() {
+  if (state.status === 'ready') {
+    state.status = 'paused';
+    pauseStartedAt = performance.now();
+  } else if (state.status === 'paused') {
+    startTime += performance.now() - pauseStartedAt;
+    pauseStartedAt = null;
+    state.status = 'ready';
+  }
 }
 
 function updatePaddle() {
@@ -553,6 +566,10 @@ function syncOverlay() {
   }
 }
 
+function syncPauseOverlay() {
+  pauseOverlay.classList.toggle('hidden', state.status !== 'paused');
+}
+
 function restartGame() {
   state.lives = INITIAL_LIVES;
   state.score = 0;
@@ -568,12 +585,13 @@ function restartGame() {
 
   startTime = null;
   lastSpeedIncreaseElapsed = 0;
+  pauseStartedAt = null;
 }
 
 overlayButton.addEventListener('click', restartGame);
 
 function update() {
-  if (state.status === 'win' || state.status === 'gameover') return;
+  if (state.status === 'win' || state.status === 'gameover' || state.status === 'paused') return;
   updatePaddle();
   updateBall();
 }
@@ -587,10 +605,12 @@ function draw() {
   drawPopups();
   updateHud();
   syncOverlay();
+  syncPauseOverlay();
 }
 
 let startTime = null;
 let lastSpeedIncreaseElapsed = 0;
+let pauseStartedAt = null;
 
 function updateDifficulty(timestamp) {
   if (startTime === null) startTime = timestamp;
@@ -602,10 +622,12 @@ function updateDifficulty(timestamp) {
 }
 
 function loop(timestamp) {
-  updateDifficulty(timestamp);
   update();
-  updateParticles();
-  updatePopups();
+  if (state.status !== 'paused') {
+    updateDifficulty(timestamp);
+    updateParticles();
+    updatePopups();
+  }
   draw();
   requestAnimationFrame(loop);
 }

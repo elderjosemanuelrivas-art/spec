@@ -6,6 +6,8 @@ html, body {
 
 body {
   display: flex;
+  flex-direction: column;
+  align-items: center;
   justify-content: center;
   overflow: auto;
 }
@@ -17,7 +19,15 @@ body {
 
 #game-container {
   position: relative;
-  margin: auto;
+  margin: 0;
+}
+
+#key-hints {
+  margin-top: 6px;
+  color: #888;
+  font-family: sans-serif;
+  font-size: 12px;
+  text-align: center;
 }
 
 #hud {

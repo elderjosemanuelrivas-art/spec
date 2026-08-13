@@ -24,6 +24,14 @@ const MAX_BOUNCE_ANGLE = (60 * Math.PI) / 180;
 const MIN_BOUNCE_ANGLE = (12 * Math.PI) / 180;
 const LAUNCH_ANGLE = (35 * Math.PI) / 180;
 
+const PARTICLES_PER_BRICK = 10;
+const PARTICLE_LIFE = 40;
+const PARTICLE_SIZE = 3;
+const PARTICLE_GRAVITY = 0.15;
+const PARTICLE_SPEED_MIN = 1;
+const PARTICLE_SPEED_MAX = 3.5;
+const MAX_PARTICLES = 400;
+
 function createBricks() {
   const bricks = [];
   for (let row = 0; row < BRICK_ROWS; row++) {
@@ -55,6 +63,8 @@ const state = {
     attached: true,
   },
   bricks: createBricks(),
+  particles: [],
+  popups: [],
 };
 
 const keys = {

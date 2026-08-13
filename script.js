@@ -32,6 +32,45 @@ const PARTICLE_SPEED_MIN = 1;
 const PARTICLE_SPEED_MAX = 3.5;
 const MAX_PARTICLES = 400;
 
+const POPUP_LIFE = 35;
+const POPUP_RISE_SPEED = 0.8;
+const POPUP_FONT = 'bold 14px sans-serif';
+
+const BRICK_ROW_FREQUENCIES = [880, 784, 698, 622, 523];
+const BRICK_SOUND_DURATION = 0.08;
+const BRICK_SOUND_GAIN = 0.15;
+
+let audioContext = null;
+let audioMuted = false;
+
+function ensureAudioContext() {
+  if (!audioContext) {
+    audioContext = new AudioContext();
+  }
+  if (audioContext.state === 'suspended') {
+    audioContext.resume();
+  }
+}
+
+function playBrickSound(row) {
+  if (audioMuted || !audioContext) return;
+
+  const oscillator = audioContext.createOscillator();
+  const gain = audioContext.createGain();
+
+  oscillator.type = 'square';
+  oscillator.frequency.value = BRICK_ROW_FREQUENCIES[row];
+
+  gain.gain.setValueAtTime(BRICK_SOUND_GAIN, audioContext.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.0001, audioContext.currentTime + BRICK_SOUND_DURATION);
+
+  oscillator.connect(gain);
+  gain.connect(audioContext.destination);
+
+  oscillator.start();
+  oscillator.stop(audioContext.currentTime + BRICK_SOUND_DURATION);
+}
+
 function createBricks() {
   const bricks = [];
   for (let row = 0; row < BRICK_ROWS; row++) {
@@ -76,6 +115,7 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'ArrowLeft') keys.left = true;
   if (e.key === 'ArrowRight') keys.right = true;
   if (e.key === ' ') launchBall();
+  if (e.key === 'm' || e.key === 'M') audioMuted = !audioMuted;
 });
 
 document.addEventListener('keyup', (e) => {
@@ -97,6 +137,7 @@ function launchBall() {
   if (state.status === 'win' || state.status === 'gameover') return;
   const ball = state.ball;
   if (!ball.attached) return;
+  ensureAudioContext();
   ball.attached = false;
   const towardsCenter = ball.x <= canvas.width / 2 ? 1 : -1;
   setBallDirection(ball, towardsCenter * LAUNCH_ANGLE);
@@ -226,6 +267,9 @@ function checkBrickCollision() {
 
   hit.alive = false;
   state.score += 10;
+  spawnBrickParticles(hit);
+  spawnScorePopup(hit);
+  playBrickSound(hit.row);
   bounceOffBrick(ball, hit);
 }
 
@@ -247,6 +291,21 @@ function spawnBrickParticles(brick) {
       maxLife: PARTICLE_LIFE,
     });
   }
+
+  if (state.particles.length > MAX_PARTICLES) {
+    state.particles.splice(0, state.particles.length - MAX_PARTICLES);
+  }
+}
+
+function spawnScorePopup(brick) {
+  state.popups.push({
+    x: brick.x + brick.width / 2,
+    y: brick.y + brick.height / 2,
+    dy: -POPUP_RISE_SPEED,
+    text: '+10',
+    life: POPUP_LIFE,
+    maxLife: POPUP_LIFE,
+  });
 }
 
 function bounceOffBrick(ball, brick) {
@@ -336,6 +395,18 @@ function updateParticles() {
   }
 }
 
+function updatePopups() {
+  const popups = state.popups;
+  for (let i = popups.length - 1; i >= 0; i--) {
+    const popup = popups[i];
+    popup.y += popup.dy;
+    popup.life -= 1;
+    if (popup.life <= 0) {
+      popups.splice(i, 1);
+    }
+  }
+}
+
 function drawBall() {
   const ball = state.ball;
   ctx.fillStyle = '#fff';
@@ -350,6 +421,26 @@ function drawBricks() {
     ctx.fillStyle = brick.color;
     ctx.fillRect(brick.x, brick.y, brick.width, brick.height);
   }
+}
+
+function drawParticles() {
+  for (const particle of state.particles) {
+    ctx.globalAlpha = particle.life / particle.maxLife;
+    ctx.fillStyle = particle.color;
+    ctx.fillRect(particle.x - particle.size / 2, particle.y - particle.size / 2, particle.size, particle.size);
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawPopups() {
+  ctx.font = POPUP_FONT;
+  ctx.fillStyle = '#fff';
+  ctx.textAlign = 'center';
+  for (const popup of state.popups) {
+    ctx.globalAlpha = popup.life / popup.maxLife;
+    ctx.fillText(popup.text, popup.x, popup.y);
+  }
+  ctx.globalAlpha = 1;
 }
 
 function updateHud() {
@@ -382,6 +473,8 @@ function restartGame() {
   state.status = 'ready';
   state.paddle.x = 200;
   state.bricks = createBricks();
+  state.particles = [];
+  state.popups = [];
 
   state.ball.speed = 4;
   attachBall();
@@ -403,6 +496,8 @@ function draw() {
   drawBricks();
   drawPaddle();
   drawBall();
+  drawParticles();
+  drawPopups();
   updateHud();
   syncOverlay();
 }
@@ -422,6 +517,8 @@ function updateDifficulty(timestamp) {
 function loop(timestamp) {
   updateDifficulty(timestamp);
   update();
+  updateParticles();
+  updatePopups();
   draw();
   requestAnimationFrame(loop);
 }
